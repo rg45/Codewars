@@ -8,9 +8,6 @@ public:
         if (s.size() != ops.size() + 1)
             throw std::logic_error("Invalid input: " + s + ":" + ops);
 
-        if (ops.size() > maxOpsSize)
-            throw std::out_of_range("Too long expression: " + s + ":" + ops);
-
         std::string exprStr{s.front()};
         exprStr.reserve(s.size() + ops.size());
         for (size_t i = 0; i < ops.size(); ++i) {
@@ -22,10 +19,7 @@ public:
     }
 private:
 
-    enum class Val : unsigned {
-        False = 0,
-        True = 1,
-    };
+    using Val = bool;
     enum class Ops : unsigned {
         None = 0,
         And = 1,
@@ -36,30 +30,18 @@ private:
     class Expression {
     public:
         Expression() = default;
-        explicit Expression(const std::string_view& input) {
-            if (!input.empty()) {
-                m = uint64_t(parseVal(input.front()));
-                for (size_t i = 1; i < input.size(); i += 2) {
-                    m += ((uint64_t(parseOps(input[i])) + (uint64_t(parseVal(input[i + 1])) << 2)) << leftBitCount((i - 1) / 2));
-                }
-            }
-        }
+        explicit Expression(const std::string_view& input) : m(input) {}
 
-        Ops Operator(size_t i) const { return Ops((m >> leftBitCount(i)) & 3); }
-        Expression LeftOperand(size_t i) const { return Expression(m & ((1 << leftBitCount(i)) - 1)); }
-        Expression RightOperand(size_t i) const { return Expression(m >> (leftBitCount(i) + 2)); }
+        Ops Operator(size_t i) const { return parseOps(m[i * 2 + 1]); }
+        Expression LeftOperand(size_t i) const { return Expression(m.substr(0, i * 2 + 1)); }
+        Expression RightOperand(size_t i) const { return Expression(m.substr((i + 1) * 2)); }
 
         bool operator < (const Expression& rhs) const { return m < rhs.m; }
         bool operator == (const Expression& rhs) const { return m == rhs.m; }
 
     private:
-        explicit Expression(uint64_t m) : m(m) {}
-        static size_t leftBitCount(size_t i) { return i * 3 + 1; }
-
-        uint64_t m{};
+        std::string_view m;
     };
-
-    static constexpr size_t maxOpsSize = (sizeof(Expression) * CHAR_BIT - 1) / 3;
 
     class TotalCaseCalculator {
     public:
@@ -96,10 +78,10 @@ private:
         { Expression("f"), 0},
         { Expression("t"), 1} };
 
-    static Val parseVal(char c) {
+    static bool parseVal(char c) {
         switch (c) {
-            case 'f': return Val::False;
-            case 't': return Val::True;
+            case 'f': return false;
+            case 't': return true;
             default: throw std::logic_error(std::string("Invalid value symbol: ") + c);
         }
     }
