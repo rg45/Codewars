@@ -4,24 +4,24 @@
 
 class TheBooleanOrderSolver {
 public:
-    uint64_t operator()(const std::string& s, const std::string& ops) {
+    size_t operator()(const std::string& s, const std::string& ops) {
         if (s.size() != ops.size() + 1)
             throw std::logic_error("Invalid input: " + s + ":" + ops);
 
         if (ops.size() > maxOpsSize)
             throw std::out_of_range("Too long expression: " + s + ":" + ops);
 
-        uint64_t expr = uint64_t(parseVal(s[0]));
-
+        std::string exprStr{s.front()};
+        exprStr.reserve(s.size() + ops.size());
         for (size_t i = 0; i < ops.size(); ++i) {
-            expr += uint64_t(parseOps(ops[i])) << (i * 3 + 1);
-            expr += uint64_t(parseVal(s[i + 1])) << (i * 3 + 3);
+            exprStr.push_back(ops[i]);
+            exprStr.push_back(s[i + 1]);
         }
         getTotalCases(ops.size());
-        return solve(expr, ops.size());
+        return solve(Expression(exprStr), ops.size());
     }
 private:
-    static constexpr size_t maxOpsSize = (sizeof(uint64_t) * CHAR_BIT - 1) / 3;
+
     enum class Val : unsigned {
         False = 0,
         True = 1,
@@ -33,12 +33,40 @@ private:
         Xor = 3,
     };
 
+    class Expression {
+    public:
+        Expression() = default;
+        explicit Expression(const std::string_view& input) {
+            if (!input.empty()) {
+                m = uint64_t(parseVal(input.front()));
+                for (size_t i = 1; i < input.size(); i += 2) {
+                    m += ((uint64_t(parseOps(input[i])) + (uint64_t(parseVal(input[i + 1])) << 2)) << leftBitCount((i - 1) / 2));
+                }
+            }
+        }
+
+        Ops Operator(size_t i) const { return Ops((m >> leftBitCount(i)) & 3); }
+        Expression LeftOperand(size_t i) const { return Expression(m & ((1 << leftBitCount(i)) - 1)); }
+        Expression RightOperand(size_t i) const { return Expression(m >> (leftBitCount(i) + 2)); }
+
+        bool operator < (const Expression& rhs) const { return m < rhs.m; }
+        bool operator == (const Expression& rhs) const { return m == rhs.m; }
+
+    private:
+        explicit Expression(uint64_t m) : m(m) {}
+        static size_t leftBitCount(size_t i) { return i * 3 + 1; }
+
+        uint64_t m{};
+    };
+
+    static constexpr size_t maxOpsSize = (sizeof(Expression) * CHAR_BIT - 1) / 3;
+
     class TotalCaseCalculator {
     public:
         TotalCaseCalculator() = default;
         TotalCaseCalculator(size_t opsSize) { ensureSize(opsSize); }
 
-        uint64_t operator()(size_t opsSize) {
+        size_t operator()(size_t opsSize) {
             ensureSize(opsSize);
             return m[opsSize];
         }
@@ -48,7 +76,7 @@ private:
             if (m.size() < opsSize + 1) {
                 m.reserve(opsSize + 1);
                 while (m.size() < opsSize + 1) {
-                    uint64_t t = 0;
+                    size_t t = 0;
                     size_t i = 0, j = m.size() - 1;
                     while (i < j) {
                         t += m[i++] * m[j--] * 2;
@@ -60,13 +88,13 @@ private:
                 }
             }
         }
-        std::vector<uint64_t> m {1, 1};
+        std::vector<size_t> m {1, 1};
     };
 
     TotalCaseCalculator getTotalCases;
-    std::map<uint64_t, uint64_t> m_sols {
-        {uint64_t(Val::False), 0},
-        {uint64_t(Val::True), 1} };
+    std::map<Expression, size_t> m_sols {
+        { Expression("f"), 0},
+        { Expression("t"), 1} };
 
     static Val parseVal(char c) {
         switch (c) {
@@ -84,21 +112,18 @@ private:
         }
     }
 
-    uint64_t solve(uint64_t expr, size_t opSize) {
+    size_t solve(const Expression& expr, size_t opSize) {
         const auto it = m_sols.lower_bound(expr);
         if (it != m_sols.end() && it->first == expr)
             return it->second;
 
-        uint64_t res = 0;
+        size_t res = 0;
         for (size_t i = 0; i < opSize; ++i) {
-            size_t lBits = i * 3 + 1;
-            uint64_t lExpr = expr & ((1 << lBits) - 1);
-            uint64_t rExpr = expr >> (lBits + 2);
-            uint64_t lt = solve(lExpr, i);
-            uint64_t rt = solve(rExpr, opSize - i - 1);
-            uint64_t lf = getTotalCases(i) - lt;
-            uint64_t rf = getTotalCases(opSize - i - 1) - rt;
-            switch (Ops((expr >> lBits) & 3)) {
+            size_t lt = solve(expr.LeftOperand(i), i);
+            size_t rt = solve(expr.RightOperand(i), opSize - i - 1);
+            size_t lf = getTotalCases(i) - lt;
+            size_t rf = getTotalCases(opSize - i - 1) - rt;
+            switch (expr.Operator(i)) {
                 case Ops::And:
                     res += lt * rt;
                     break;
@@ -124,10 +149,10 @@ uint64_t solve(const std::string &s, const std::string &ops) {
 }
 
 TEST_CASE("basic_tests" "[The Boolean Order Tests]") {
+    CHECK(solve("tf", "^") == 1);
     CHECK(solve("tft", "^&") == 2);
     CHECK(solve("ttftff","|&^&&") == 16);
     CHECK(solve("ttftfftf","|&^&&||") == 339);
     CHECK(solve("ttftfftft","|&^&&||^") == 851);
-    CHECK(solve("ttftfftftf", "|&^&&||^&") == 2434);     /*
-*/
+    CHECK(solve("ttftfftftf", "|&^&&||^&") == 2434);
 }
